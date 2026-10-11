@@ -97,11 +97,11 @@ cv::Mat sobelFilter(const cv::Mat& grayFrame)
             // // Compute magnitude using approximation
             // int magnitude = (abs_gx > abs_gy) ? abs_gx + (abs_gy >> 1) : abs_gy + (abs_gx >> 1);
 
-            // // Clamp to [0, 255]
-            // if (magnitude > 255)
-            // {
-            //     magnitude = 255;
-            // }
+            // Clamp to [0, 255]
+            if (magnitude > 255)
+            {
+              magnitude = 255;
+            }
 
             // Store in output image
             sobelFrame.at<unsigned char>(y - 1, x - 1) =

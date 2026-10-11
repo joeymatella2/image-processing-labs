@@ -1,115 +1,130 @@
 /************************************************************
- * File: main_baseline.cpp
+ * File: main.cpp
  *
- * Description: Benchmarks the full-frame grayscale and Sobel
- *              baseline at a selected image resolution.
+ * Description: Reads frames from a 4K video, converts them
+ *              to grayscale, applies a Sobel edge detector,
+ *              and displays the processed frames using OpenCV.
  *
  * Author: Joseph Matella
+ *
+ * Revisions:
+ *
  ************************************************************/
-
-#include <chrono>
-#include <iomanip>
+ 
 #include <iostream>
-
+#include <chrono>
 #include "image_processing.h"
-
-// Change these values and rerun for each required resolution.
-constexpr int TARGET_WIDTH = 3840;
-constexpr int TARGET_HEIGHT = 2160;
 
 int main()
 {
+    // Open the video file
     cv::VideoCapture video("../video/bbb_sunflower_2160p_60fps_normal.mp4");
 
+    // Make sure the video opened successfully
     if (!video.isOpened())
     {
         std::cerr << "Error: Could not open video.\n";
         return 1;
     }
 
+    // This Mat will hold one frame at a time
     cv::Mat frame;
-    cv::Mat resizedFrame(TARGET_HEIGHT, TARGET_WIDTH, CV_8UC3);
-    cv::namedWindow("Baseline Sobel", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Baseline Sobel", TARGET_WIDTH / 2, TARGET_HEIGHT / 2);
 
+    // Benchmark variables
+    double totalGrayTime = 0.0;
+    double totalSobelTime = 0.0;
+    int frameCount = 0;
+    
     using Clock = std::chrono::steady_clock;
 
-    double totalGrayTimeMs = 0.0;
-    double totalSobelTimeMs = 0.0;
-    int frameCount = 0;
+    auto loopStart = Clock::now();
 
     while (true)
     {
-        // Video input and resizing are deliberately outside the timed region.
-        if (!video.read(frame) || frame.empty())
+        // Read the next frame from the video
+        bool success = video.read(frame);
+
+        // Stop if there are no more frames
+        if (!success || frame.empty())
         {
             break;
         }
 
-        cv::resize(
-            frame,
-            resizedFrame,
-            cv::Size(TARGET_WIDTH, TARGET_HEIGHT));
 
-        const auto grayStart = Clock::now();
-        cv::Mat grayFrame = grayscale(resizedFrame);
-        const auto grayEnd = Clock::now();
+        // Convert the frame to grayscale and time the operation
+        auto grayStart = Clock::now();
 
-        const auto sobelStart = Clock::now();
+        cv::Mat grayFrame = grayscale(frame);
+
+        auto grayEnd = Clock::now();
+
+        // Apply the Sobel filter and time the operation
+        auto sobelStart = Clock::now();
+
         cv::Mat sobelFrame = sobelFilter(grayFrame);
-        const auto sobelEnd = Clock::now();
 
-        totalGrayTimeMs +=
+        auto sobelEnd = Clock::now();
+
+        // Compute the elapsed time for each operation in milliseconds
+        double grayTime =
             std::chrono::duration<double, std::milli>(grayEnd - grayStart).count();
-        totalSobelTimeMs +=
-            std::chrono::duration<double, std::milli>(sobelEnd - sobelStart).count();
-        frameCount++;
 
-        // Display is outside both timed processing regions.
-        cv::imshow("Baseline Sobel", sobelFrame);
+        double sobelTime =
+            std::chrono::duration<double, std::milli>(sobelEnd - sobelStart).count();
+
+        // Update benchmark totals
+        totalGrayTime += grayTime;
+        totalSobelTime += sobelTime;
+        ++frameCount;
+
+        // Display the current frame
+        cv::imshow("Video", sobelFrame);
+
+        // Wait briefly and check whether the user pressed a key.
+        // 1 means wait approximately 1 millisecond.
         if (cv::waitKey(1) >= 0)
         {
             break;
         }
     }
 
+    auto loopEnd = Clock::now();
+
+    // Explicitly release the video file
     video.release();
+
+    // Close any OpenCV windows
     cv::destroyAllWindows();
 
+    // Prevent division by zero in case no frames were processed
     if (frameCount == 0)
     {
         std::cerr << "Error: No frames were processed.\n";
         return 1;
     }
 
-    const double averageGrayTimeMs = totalGrayTimeMs / frameCount;
-    const double averageSobelTimeMs = totalSobelTimeMs / frameCount;
-    const double averageProcessingTimeMs =
-        averageGrayTimeMs + averageSobelTimeMs;
-    const double outputPixelCount =
-        static_cast<double>(TARGET_WIDTH - 2) * (TARGET_HEIGHT - 2);
-    const double timePerOutputPixelNs =
-        averageProcessingTimeMs * 1e6 / outputPixelCount;
-    const double processingFps = 1000.0 / averageProcessingTimeMs;
-    const std::size_t intermediateStorageBytes =
-        static_cast<std::size_t>(TARGET_WIDTH) * TARGET_HEIGHT;
+    // Calculate average times and FPS
+    double totalLoopTime =
+        std::chrono::duration<double>(loopEnd - loopStart).count();
 
-    std::cout << std::fixed << std::setprecision(3);
-    std::cout << "Implementation: Full-frame grayscale + Sobel baseline\n";
-    std::cout << "Input resolution: " << TARGET_WIDTH << " x "
-              << TARGET_HEIGHT << '\n';
+    double endToEndFps = frameCount / totalLoopTime;
+
+    double avgGrayTime = totalGrayTime / frameCount;
+    double avgSobelTime = totalSobelTime / frameCount;
+
+    double avgProcessingTime = avgGrayTime + avgSobelTime;
+
+    double sobelFps = 1000.0 / avgSobelTime;
+    double processingFps = 1000.0 / avgProcessingTime;
+
+    // Print benchmark results
     std::cout << "Frames processed: " << frameCount << '\n';
-    std::cout << "Intermediate grayscale storage: "
-              << intermediateStorageBytes << " bytes\n";
-    std::cout << "Average grayscale time: "
-              << averageGrayTimeMs << " ms/frame\n";
-    std::cout << "Average Sobel time: "
-              << averageSobelTimeMs << " ms/frame\n";
-    std::cout << "Average processing time: "
-              << averageProcessingTimeMs << " ms/frame\n";
-    std::cout << "Time per output pixel: "
-              << timePerOutputPixelNs << " ns/pixel\n";
+    std::cout << "Average grayscale time: " << avgGrayTime << " ms\n";
+    std::cout << "Average Sobel time: " << avgSobelTime << " ms\n";
+    std::cout << "Average processing time: " << avgProcessingTime << " ms\n";
+    std::cout << "Sobel FPS: " << sobelFps << '\n';
     std::cout << "Processing FPS: " << processingFps << '\n';
+    std::cout << "End-to-end FPS: " << endToEndFps << '\n';
 
     return 0;
 }
